@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+#
+# Localcert: A command-line utility to generate self signed certificates for localhost servers.
+# https://github.com/melbahja/localcert
+#
+# The MIT License (MIT)
+#
+# Copyright (c) 2020 Mohammed El Bahja
+#
+
+localcert_tag=${1:-help}
+localcert_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/localcert"
+
+usage() {
+
+cat << EOF
+SYNOPSIS
+    localcert <tag_name> <hosts1,host2>
+
+DESCRIPTION
+    A command-line utility to generate self signed certificates for localhost servers.
+
+EXAMPLES
+    localcert example localhost,localhost.test
+    localcert example2 localhost2,localhost2.test
+
+INFO
+    Version         v0.1.0
+    Author          Mohamed Elbahja
+EOF
+}
+
+cert_name() {
+
+	echo $1 | tr -dc '[:alnum:]\n\r'
+}
+
+mkconfig() {
+
+	cert_path="${localcert_cfg}/`cert_name $1`"
+	mkdir -p $cert_path
+	echo $cert_path;
+}
+
+check() {
+
+	if [[ `command -v openssl` == "" ]]; then
+		echo "Openssl required!";
+		exit 2;
+	fi
+}
+
+
+# based on https://stackoverflow.com/a/60516812
+gen_certs() {
+
+	openssl genrsa -out "$1/rootCA.key" 2048 &&
+	openssl req -x509 -new -nodes -key "$1/rootCA.key" \
+		-sha256 -days 825 -out "$1/rootCA.pem" -subj "/O=Localcert"
+	openssl genrsa -out "$1/localcert.key" 2048
+	openssl req -new -key "$1/localcert.key" \
+		-out "$1/localcert.csr" -subj "/C=XX/ST=LocalhostST/L=Localhost/O=Localcert" &&
+	cat > "$1/localcert.ext" <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+[alt_names]
+$2
+EOF
+	openssl x509 -req -in "$1/localcert.csr" \
+		-CA "$1/rootCA.pem" -CAkey "$1/rootCA.key" \
+		-CAcreateserial -out "$1/localcert.crt" \
+		-days 825 -sha256 -extfile "$1/localcert.ext"
+}
+
+
+donemsg() {
+
+cat << EOF
+Certificates generated successfully at:
+	${1}/
+
+On chrome go to: chrome://settings/certificates -> authorities, then import:
+	${1}/rootCA.pem
+
+Certs for webserver:
+	CertFile: ${1}/localcert.crt
+	KeyFile:  ${1}/localcert.key
+
+EOF
+}
+
+mkcerts() {
+
+	i=0;
+	output_dir=$1
+	hosts_dns=""
+	IFS=',' read -ra hosts <<< "$2"; for host in "${hosts[@]}"
+	do
+		i=$(($i + 1))
+		ln="DNS.${i} = $host\n"
+		hosts_dns="${hosts_dns}${ln}";
+	done
+
+	gen_certs "$output_dir" "$hosts_dns" &>"$output_dir/logs.txt" && donemsg "$output_dir"
+}
+
+localcert_run() {
+
+	if [[ $2 == "" ]]; then
+		echo "Hosts param required! (example: localcert foobar localhost).";
+		exit 1;
+	fi
+
+	mkcerts $(mkconfig $1) $2
+}
+
+
+if [[ $localcert_tag == "help" ]]; then
+	usage
+	exit 0;
+fi
+
+check && localcert_run $@
