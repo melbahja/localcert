@@ -5,7 +5,7 @@ Localcert: A command-line utility to generate self signed certificates for local
 # Install
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/melbahja/localcert/main/localcert
+curl -sfL https://raw.githubusercontent.com/melbahja/localcert/main/localcert -o localcert
 chmod +x ./localcert
 sudo mv ./localcert /usr/local/bin/localcert
 ```
